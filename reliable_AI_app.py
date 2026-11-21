@@ -1,6 +1,15 @@
 import os
+import logging
 from dotenv import load_dotenv
 from google import genai
+
+logging.basicConfig(
+    filename="app.log",
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(message)s",
+    encoding="utf-8",
+)
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 api_key = os.getenv("GEMINI_API_KEY")
@@ -16,14 +25,23 @@ def ask_gemini(customer_message):
         "Reply briefly and helpfully to this customer message:\n\n"
         f"{customer_message}"
     )
-    response = client.models.generate_content(
-        model=MODEL_NAME,
-        contents=prompt,
-    )
-    return response.text
+    logger.info("Sending request to Gemini (message length: %d)", len(customer_message))
+    try:
+        response = client.models.generate_content(
+            model=MODEL_NAME,
+            contents=prompt,
+        )
+    except Exception as error:
+        logger.error("Gemini request failed: %s", error)
+        raise
+
+    reply = response.text
+    logger.info("Reply received (length: %d)", len(reply) if reply else 0)
+    return reply
 
 
 def main():
+    logger.info("App started")
     customer_message = input("Customer message: ")
     reply = ask_gemini(customer_message)
     print("\nAI reply:")
