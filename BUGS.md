@@ -1,9 +1,16 @@
 # Bug Notebook
 ## Suspicious spots
-- App printed nothing at first (no real code yet)
-- No check for empty input
-- No check for missing API key
-- No handling if the API call fails or times out
-- response.text might be empty or None
+## Bug #1: AI invented shop facts
+- Before: said "Yes, we offer Sunday delivery" with no information
+- Cause: prompt had no shop facts and no "don't guess" rule
+- Fix: added SHOP_INFO and a "use only this information" instruction
+- Result: (write what you saw in Test 3 and Test 4)
+
+## Bug #2: Empty input sent to the API
+- Before: ...
+- Fix: validate_message() ...
+
+## Bug #3: Empty AI reply printed as "None"
+- Fix: FALLBACK_REPLY ...
 ## Confirmed bug candidate
 - AI invents shop facts (said "yes" to Sunday delivery without knowing). Fix idea: give the prompt real shop info and tell it not to guess.

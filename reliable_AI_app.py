@@ -13,14 +13,48 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 load_dotenv()
-api_key = os.getenv("GEMINI_API_KEY")
 
 MODEL_NAME = "gemini-3.5-flash-lite"
 MAX_ATTEMPTS = 3
 BASE_DELAY_SECONDS = 1
 RETRYABLE_CODES = {429, 500, 503, 504}
+MAX_MESSAGE_LENGTH = 1000
+FALLBACK_REPLY = (
+    "Sorry, I couldn't prepare a reply right now. "
+    "Please contact the shop directly."
+)
 
-client = genai.Client(api_key=api_key)
+# Edit these facts so they match your (real or pretend) shop.
+SHOP_INFO = """
+Shop name: HamTech Store
+Opening hours: Monday to Saturday, 8am to 6pm. Closed on Sundays.
+Delivery: Monday to Saturday only. No Sunday delivery.
+Payment: Cash and mobile money.
+"""
+
+
+def get_client():
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        logger.error("GEMINI_API_KEY is missing")
+        raise RuntimeError("GEMINI_API_KEY is missing. Add it to your .env file.")
+    return genai.Client(api_key=api_key)
+
+
+def validate_message(message):
+    if message is None or not message.strip():
+        logger.warning("Rejected empty message")
+        raise ValueError("The message is empty. Please type something.")
+
+    message = message.strip()
+
+    if len(message) > MAX_MESSAGE_LENGTH:
+        logger.warning("Rejected message that was too long (%d characters)", len(message))
+        raise ValueError(
+            f"The message is too long. Please keep it under {MAX_MESSAGE_LENGTH} characters."
+        )
+
+    return message
 
 
 def call_with_retry(make_request, max_attempts=MAX_ATTEMPTS, base_delay=BASE_DELAY_SECONDS):
@@ -44,11 +78,18 @@ def call_with_retry(make_request, max_attempts=MAX_ATTEMPTS, base_delay=BASE_DEL
 
 
 def ask_gemini(customer_message):
+    customer_message = validate_message(customer_message)
+
     prompt = (
         "You are a polite assistant for a small shop. "
-        "Reply briefly and helpfully to this customer message:\n\n"
-        f"{customer_message}"
+        "Use ONLY the shop information below to answer. "
+        "If the answer is not in the shop information, say you are not sure "
+        "and suggest the customer contact the shop directly. Never guess.\n\n"
+        f"SHOP INFORMATION:\n{SHOP_INFO}\n"
+        f"CUSTOMER MESSAGE:\n{customer_message}"
     )
+
+    client = get_client()
     logger.info("Sending request to Gemini (message length: %d)", len(customer_message))
 
     response = call_with_retry(
@@ -59,14 +100,30 @@ def ask_gemini(customer_message):
     )
 
     reply = response.text
-    logger.info("Reply received (length: %d)", len(reply) if reply else 0)
+    if not reply or not reply.strip():
+        logger.warning("Gemini returned an empty reply; using fallback")
+        return FALLBACK_REPLY
+
+    logger.info("Reply received (length: %d)", len(reply))
     return reply
 
 
 def main():
     logger.info("App started")
     customer_message = input("Customer message: ")
-    reply = ask_gemini(customer_message)
+
+    try:
+        reply = ask_gemini(customer_message)
+    except ValueError as error:
+        print(f"\nInput problem: {error}")
+        return
+    except RuntimeError as error:
+        print(f"\nSetup problem: {error}")
+        return
+    except Exception:
+        print("\nSorry, something went wrong. Please try again later.")
+        return
+
     print("\nAI reply:")
     print(reply)
 
